@@ -428,6 +428,10 @@ ok.json(user)                                   // any A with a JsonBody[A] inst
 ok.text("pong")
 created; accepted; noContent; notFound; badRequest
 status(503).header("Retry-After", "30").json("""{"error":"unavailable"}""")
+// header names must be RFC 9110 tokens (ASCII letters, digits, !#$%&'*+-.^_`|~) and are rejected
+// at construction — a name outside that grammar defeats the case-insensitive comparisons the
+// serve path makes. Same rule for withErrorFault's headers and proxy injectHeader. Decoding a
+// recorded fixture stays permissive: it reproduces whatever the wire actually carried.
 ok.binary(bytes)                                // _mode: binary, base64 on the wire
 ok.json("""{"path":"${request.path}"}""").templated
 

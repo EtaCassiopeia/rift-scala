@@ -16,6 +16,8 @@ final class FlowStateConfigBuilder private[dsl] (
   def ttl(duration: FiniteDuration): FlowStateConfigBuilder =
     new FlowStateConfigBuilder(backend, Some(duration.toSeconds), flowIdSourceValue)
 
+  // Unvalidated for the same reason as the predicate-side `header(...)` selector: this names a
+  // header to read off an inbound request, not one to write to a wire.
   def flowIdFromHeader(name: String): FlowStateConfigBuilder =
     new FlowStateConfigBuilder(backend, ttlSecondsValue, Some(s"header:$name"))
 

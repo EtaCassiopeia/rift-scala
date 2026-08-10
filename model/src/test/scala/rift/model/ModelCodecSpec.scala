@@ -109,3 +109,16 @@ class ModelCodecSpec extends munit.FunSuite:
   test("decode errors identify the offending path rather than throwing"):
     val e = ImposterDefinition.fromJson(parse("""{"protocol":"gopher"}""")).left.toOption.get
     assert(e.toString.contains("protocol"), s"error should mention the field, got: $e")
+
+  // Issue #153 validates header names in the *DSL*, where a caller authors one. Decode is the
+  // wire-fidelity layer and must stay permissive: a recorded fixture or an engine payload can
+  // legitimately carry a name the DSL would refuse, and reproducing it is the whole contract.
+  // Tightening decode to match the DSL would make such a fixture undecodable.
+  test("decode stays permissive about header names the DSL would reject"):
+    val src = """{"is":{"statusCode":200,"headers":{" Content-Type":"text/plain"}}}"""
+    val r = Response.fromJson(parse(src)).fold(e => fail(e.toString), identity)
+    assertEquals(
+      r.asInstanceOf[Response.Is].response.headers.entries,
+      Vector(" Content-Type" -> "text/plain")
+    )
+    assert(r.toJson.semanticEquals(parse(src)))

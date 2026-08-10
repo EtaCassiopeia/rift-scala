@@ -44,7 +44,7 @@ final class ProxyResponseBuilder private[dsl] (
 
   /** Adds a header to the request sent upstream (not to the recorded stub's response). */
   def injectHeader(name: String, value: String): ProxyResponseBuilder =
-    withState(injectHeadersValue = injectHeadersValue :+ (name -> value))
+    withState(injectHeadersValue = injectHeadersValue :+ (requireHeaderName(name) -> value))
 
   /** Attaches a `decorate` behavior to each recorded stub. */
   def decorateWith(js: String): ProxyResponseBuilder = withState(decorateValue = Some(js))
