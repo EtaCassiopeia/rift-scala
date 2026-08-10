@@ -88,7 +88,9 @@ That is deliberate. Before #147 both lines were accepted and then answered as a 
 wait and the fault quietly discarded — so a resilience test written this way passed against a
 success response nobody asked for. The full reject set is every `_behaviors` and `_rift` construct
 (waits, `decorate`, `repeat`, `shellTransform`, `copy`, `lookup`, templating, every fault kind, an
-embedded `_rift.script`), a binary body, and a repeated header name. All of them survive intact on
+embedded `_rift.script`), a binary body, and a repeated header name — repeated compared the way HTTP
+compares field names, so `Content-Type` and `content-type` are one header, not two. All of them
+survive intact on
 an imposter stub, which is why the error points you here.
 
 ### 3 — the SUT's client, routed through the intercept

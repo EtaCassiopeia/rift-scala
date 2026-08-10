@@ -812,7 +812,8 @@ trait InterceptHandle:
   // `serve` carries a numeric status, single-valued headers and a text/JSON body — the whole of
   // what the engine's intercept serve action delivers (#147). Every other construct an `is`
   // response can express (all _behaviors and _rift constructs, a binary body, a repeated header
-  // name) rejects loudly naming every offender — those need redirectTo(imposter), which keeps
+  // name — case-insensitively, so Content-Type and content-type are one header) rejects loudly
+  // naming every offender — those need redirectTo(imposter), which keeps
   // full stub fidelity across the D2 raw-JSON seam.
   def rules: IO[RiftError, Chunk[InterceptRule]]
   def clearRules: IO[RiftError, Unit]

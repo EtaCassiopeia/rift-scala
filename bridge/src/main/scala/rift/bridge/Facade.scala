@@ -346,15 +346,26 @@ private[bridge] object FacadeEncode:
           "answer a response you did not ask for. Use redirectTo(imposter) for full stub fidelity."
       )
 
-  /** Header names carrying more than one value, in first-seen order. The engine's serve action
-    * emits only `values.get(0)` per name, so the rest would vanish.
+  /** Header names carrying more than one value under HTTP's case-insensitive name equality (RFC
+    * 9110 §5.1), reported once per logical header in first-seen order and first-seen casing. The
+    * engine's serve action emits only `values.get(0)` per name, so the rest would vanish.
+    *
+    * Folded with `Locale.ROOT` rather than compared pairwise with `equalsIgnoreCase`: one relation
+    * decides both the grouping and the count, and it is immune to the Turkish-I trap a
+    * default-locale fold carries. Over the ASCII tokens RFC 9110 §5.6.2 allows as field names the
+    * fold and `Headers.get`'s `equalsIgnoreCase` agree exactly, so the two ends of this path — this
+    * guard and the #149 Content-Type default — cannot disagree about what repeats.
     *
     * Quadratic, over a header list: the alternative that reads as cheaper (`groupBy`) returns hash
     * order, which would reorder the names in the error message run to run.
     */
   private def repeatedHeaderNames(headers: Headers): Vector[String] =
+    def fold(name: String): String = name.toLowerCase(java.util.Locale.ROOT)
     val names = headers.entries.map(_._1)
-    names.distinct.filter(name => names.count(_ == name) > 1)
+    names.distinctBy(fold).filter { name =>
+      val f = fold(name)
+      names.count(fold(_) == f) > 1
+    }
 
   private def isPlainIsExtra(extra: Vector[(String, Json)]): Boolean =
     extra.isEmpty || extra == Vector(binaryMarker)
