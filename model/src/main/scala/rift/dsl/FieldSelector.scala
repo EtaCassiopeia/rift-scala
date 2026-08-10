@@ -77,6 +77,8 @@ final case class PredicateBuilder private[dsl] (
 def method: FieldSelector = FieldSelector("method")
 def path: FieldSelector = FieldSelector("path")
 def body: FieldSelector = FieldSelector("body")
+// Deliberately unvalidated, unlike the response-side `.header(...)`: this names a header to *match*
+// on inbound traffic, so a malformed name simply never matches — it never reaches a wire.
 def header(name: String): FieldSelector = FieldSelector("headers", Some(name))
 def query(name: String): FieldSelector = FieldSelector("query", Some(name))
 

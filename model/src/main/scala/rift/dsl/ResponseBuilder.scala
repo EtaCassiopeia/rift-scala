@@ -15,6 +15,35 @@ private[dsl] def requireProbability(p: Double): Double =
   require(p >= 0.0 && p <= 1.0, s"probability must be within 0.0..1.0, got $p")
   p
 
+private val tcharPunctuation = "!#$%&'*+-.^_`|~"
+
+/** The RFC 9110 §5.6.2 field-name grammar (`1*tchar`). A name outside it is not a header the engine
+  * can write faithfully, and it silently defeats every case-insensitive comparison downstream —
+  * `equalsIgnoreCase` strips nothing, so `" Content-Type"` reaches the wire *beside* the serve
+  * path's injected Content-Type default and past the repeated-name guard, neither of which can
+  * equate it with `Content-Type`.
+  *
+  * Rejected at the call site that wrote it rather than trimmed: trimming would silently answer with
+  * a header the caller did not ask for. Decoding stays permissive on purpose — `Headers.fromJson`
+  * reproduces whatever a recorded fixture or an engine payload actually carried, which is a
+  * different contract from authoring one here.
+  */
+private[dsl] def requireHeaderName(name: String): String =
+  def isTchar(c: Char): Boolean =
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+      tcharPunctuation.contains(c)
+  require(name.nonEmpty, "header name must not be empty — expected an RFC 9110 token")
+  val offender = name.indexWhere(!isTchar(_))
+  // Named by code point, not merely quoted: a non-breaking space or a stray tab renders
+  // indistinguishably from a legal name, so quoting alone leaves the caller staring at input that
+  // looks correct. `require`'s message is by-name, so `name(offender)` is unreachable when valid.
+  require(
+    offender < 0,
+    s"header name '$name' is not an RFC 9110 token: expected ASCII letters, digits or " +
+      f"$tcharPunctuation, but found U+${name(offender).toInt}%04X at index $offender"
+  )
+  name
+
 private[dsl] def parseJsonOrThrow(raw: String): Json =
   Json.parse(raw).fold(e => throw new IllegalArgumentException(e.toString), identity)
 
@@ -67,7 +96,7 @@ final class IsResponseBuilder private[dsl] (
     )
 
   def header(name: String, value: String): IsResponseBuilder =
-    withState(headersValue = headersValue :+ (name -> value))
+    withState(headersValue = headersValue :+ (requireHeaderName(name) -> value))
 
   def templated: IsResponseBuilder = withState(templatedValue = true)
 
@@ -147,6 +176,7 @@ final class IsResponseBuilder private[dsl] (
       headers: Map[String, String] = Map.empty
   ): IsResponseBuilder =
     requireProbability(probability)
+    headers.keys.foreach(requireHeaderName)
     // RiftErrorFault.body is a raw wire string (types.rs:1184-1185) — the engine writes it
     // verbatim, so it is never parsed/validated as JSON here, unlike `is`-response bodies.
     val error = ErrorFault(probability, status, Some(body), Headers(headers))

@@ -207,6 +207,81 @@ class DslSpec extends munit.FunSuite:
   test("withLatencyFault rejects an out-of-range probability"):
     intercept[IllegalArgumentException](ok.withLatencyFault(probability = 1.5, 1.second))
 
+  // Issue #153 — a header name outside the RFC 9110 §5.6.2 token grammar is not a header the engine
+  // can write faithfully, and it silently defeats every case-insensitive comparison downstream
+  // (`equalsIgnoreCase` strips nothing). `" Content-Type"` would ride to the wire *alongside* the
+  // serve path's injected Content-Type default, and past the #152 duplicate guard, because neither
+  // can equate it with `Content-Type`. Rejected at the call site that wrote it, like the
+  // probability guards above. Trimming instead would silently rewrite what the caller asked for.
+  private def rejectsName(construct: => Any)(using munit.Location): String =
+    intercept[IllegalArgumentException](construct).getMessage
+
+  test("header rejects a name outside the RFC 9110 token grammar, naming it"):
+    val msg = rejectsName(ok.header(" Content-Type", "text/plain"))
+    assert(msg.contains("' Content-Type'"), msg)
+
+  test("header rejects every malformed name shape"):
+    // empty, leading/trailing/interior space, a colon (the field terminator itself), non-ASCII,
+    // and control characters
+    for bad <- List("", " X", "X ", "X Y", "Content-Type:", "Contenté-Type", "X\tY", "X\nY") do
+      intercept[IllegalArgumentException](ok.header(bad, "v"))
+
+  // Quoting the name alone is useless when the offender is invisible: a non-breaking space is the
+  // realistic copy-paste-from-docs hazard and renders exactly like a legal name.
+  test("header names the offending character by code point, not just the name"):
+    // built from the code point rather than pasted: a raw NBSP in source is invisible to review
+    val nbsp = 0xa0.toChar
+    val msg = rejectsName(ok.header(s"Content${nbsp}Type", "v"))
+    assert(msg.contains("U+00A0"), msg)
+    assert(msg.contains("index 7"), msg)
+
+  test("header accepts any valid token, whatever its casing or punctuation"):
+    // casing is not validation's business — #152 already equates spellings case-insensitively
+    assertEquals(
+      ok.header("cOnTeNt-TyPe", "v").buildIs.headers.entries,
+      Vector("cOnTeNt-TyPe" -> "v")
+    )
+    // the full tchar punctuation set must survive: rejecting a legal token would be the worse bug
+    val tchars = "!#$%&'*+-.^_`|~"
+    val exotic = s"x${tchars}9"
+    assertEquals(ok.header(exotic, "v").buildIs.headers.entries, Vector(exotic -> "v"))
+
+  test("withErrorFault validates its header names too"):
+    val msg = rejectsName(ok.withErrorFault(0.5, 503, "oops", Map(" X" -> "1")))
+    assert(msg.contains("' X'"), msg)
+    // and a valid one still builds unchanged
+    val error = ok
+      .withErrorFault(0.5, 503, "oops", Map("X-Err" -> "1"))
+      .build
+      .asInstanceOf[Response.Is]
+      .rift
+      .flatMap(_.fault)
+      .flatMap(_.error)
+      .get
+    assertEquals(error.headers.entries, Vector("X-Err" -> "1"))
+
+  test("injectHeader validates its header name too"):
+    val msg = rejectsName(proxyTo("http://upstream.example.com").injectHeader(" X", "1"))
+    assert(msg.contains("' X'"), msg)
+    // a valid one must still reach the built wire shape, not merely fail to throw
+    assertEquals(
+      proxyTo("http://upstream.example.com")
+        .injectHeader("X-Ok", "1")
+        .build
+        .asInstanceOf[Response.Proxy]
+        .proxy
+        .injectHeaders,
+      Vector("X-Ok" -> "1")
+    )
+    assert(
+      proxyTo("http://upstream.example.com")
+        .injectHeader("X-Ok", "1")
+        .build
+        .isInstanceOf[
+          Response.Proxy
+        ]
+    )
+
   test("other response kinds build their wire forms"):
     assert(fault(TcpFaultKind.ConnectionResetByPeer).build.isInstanceOf[Response.Fault])
     assert(inject("function (request) { return {}; }").build.isInstanceOf[Response.Inject])
